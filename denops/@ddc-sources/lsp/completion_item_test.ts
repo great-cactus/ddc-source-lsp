@@ -30,6 +30,7 @@ async function setup(args: {
   input: string;
   buffer: string[];
   lspItem: LSP.CompletionItem;
+  offsetEncoding?: OffsetEncoding;
 }) {
   const { row, col, completePos } = searchCursor(args.buffer, args.input);
   await nvim.nvim_buf_set_lines(args.denops, 0, 0, -1, true, args.buffer);
@@ -37,7 +38,7 @@ async function setup(args: {
 
   const completionItem = new CompletionItem(
     ClientId,
-    OffsetEncoding,
+    args.offsetEncoding ?? OffsetEncoding,
     Resolvable,
     args.buffer[row - 1],
     completePos,
@@ -221,5 +222,37 @@ test({
       `  let s = dbg!("")|foo`,
       "}",
     ]);
+  },
+});
+
+test({
+  name: "utf-8 range after multibyte characters (positionEncoding=utf-8)",
+  mode: "nvim",
+  fn: async (denops) => {
+    // "メモ " is 7 bytes in UTF-8 but 3 code units in UTF-16.
+    const lspItem = {
+      label: "#PERMANENT",
+      textEdit: {
+        range: makeRange(0, 7, 0, 11),
+        newText: "#PERMANENT",
+      },
+    } satisfies LSP.CompletionItem;
+    const ddcItem = await setup({
+      denops,
+      input: "#PER",
+      buffer: ["メモ |です"],
+      lspItem,
+      offsetEncoding: "utf-8",
+    });
+
+    await CompletionItem.confirm(
+      denops,
+      lspItem,
+      lspItem,
+      ddcItem.user_data!,
+      params,
+    );
+
+    await assertBuffer(denops, ["メモ #PERMANENT|です"]);
   },
 });

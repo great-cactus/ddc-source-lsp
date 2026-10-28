@@ -305,8 +305,7 @@ export class Source extends BaseSource<Params> {
       CompletionItem.isReplace(
         lspItem,
         params.confirmBehavior,
-        userData.suggestCharacter,
-        userData.requestCharacter,
+        userData,
       );
   }
 

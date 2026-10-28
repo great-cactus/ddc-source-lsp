@@ -74,18 +74,40 @@ export class CompletionItem {
   static isReplace(
     lspItem: LSP.CompletionItem,
     confirmBehavior: ConfirmBehavior,
-    suggestCharacter: number,
-    requestCharacter: number,
+    userData: UserData,
   ): boolean {
+    const range = this.#getUtf16EditRange(lspItem, confirmBehavior, userData);
+    if (!range) {
+      return false;
+    }
+    return range.start < userData.suggestCharacter ||
+      range.end > userData.requestCharacter;
+  }
+
+  // textEdit ranges are in the server's positionEncoding, while the buffer
+  // side (LineContext, suggestCharacter) counts UTF-16 code units.
+  static #getUtf16EditRange(
+    lspItem: LSP.CompletionItem,
+    confirmBehavior: ConfirmBehavior,
+    userData: UserData,
+  ): { start: number; end: number } | undefined {
     const textEdit = lspItem.textEdit;
     if (!textEdit) {
-      return false;
+      return undefined;
     }
     const range = "range" in textEdit
       ? textEdit.range
       : textEdit[confirmBehavior];
-    return range.start.character < suggestCharacter ||
-      range.end.character > requestCharacter;
+    const toUtf16 = (character: number) =>
+      toUtf16Index(
+        userData.lineOnRequest,
+        character,
+        userData.offsetEncoding,
+      );
+    return {
+      start: toUtf16(range.start.character),
+      end: toUtf16(range.end.character),
+    };
   }
 
   static async confirm(
@@ -102,7 +124,7 @@ export class CompletionItem {
       lspItem,
       params.confirmBehavior,
       ctx.character,
-      userData.suggestCharacter,
+      userData,
     );
 
     await this.#applySyncAdditionalTextEdits(
@@ -151,15 +173,13 @@ export class CompletionItem {
     lspItem: LSP.CompletionItem,
     confirmBehavior: ConfirmBehavior,
     character: number,
-    suggestCharacter: number,
+    userData: UserData,
   ): [number, number] {
-    if (!lspItem.textEdit) {
-      return [character - suggestCharacter, 0];
+    const range = this.#getUtf16EditRange(lspItem, confirmBehavior, userData);
+    if (!range) {
+      return [character - userData.suggestCharacter, 0];
     }
-    const range = "range" in lspItem.textEdit
-      ? lspItem.textEdit.range
-      : lspItem.textEdit[confirmBehavior];
-    return [character - range.start.character, range.end.character - character];
+    return [character - range.start, range.end - character];
   }
 
   static async #applySyncAdditionalTextEdits(
